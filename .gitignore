@@ -1,0 +1,13 @@
+node_modules/
+dist/
+generated_rats/
+*.o
+*.res
+*.exe
+!rootserver/w64devkit/**/*.exe
+rootserver/w64devkit/
+*.log
+.env
+cookies.db
+bridge/database.db
+Client/frontend/.env

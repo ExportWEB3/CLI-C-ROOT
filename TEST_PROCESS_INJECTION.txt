@@ -1,0 +1,236 @@
+# COMPLETE PROCESS INJECTION TESTING GUIDE
+
+## CURRENT STATUS:
+✅ Bridge server running on port 8080 (PID 14068)
+✅ Frontend running on port 3000 (PID 5296)
+✅ Old RAT client running (PID 620) - NEEDS TO BE STOPPED
+✅ New RAT client compiled: rat_client_injection.exe
+
+## STEP 1: STOP OLD RAT CLIENT
+Run this command in PowerShell:
+
+```powershell
+taskkill /PID 620 /F
+```
+
+Or use Task Manager:
+1. Open Task Manager (Ctrl+Shift+Esc)
+2. Find "rat_client.exe" (PID 620)
+3. Click "End Task"
+
+## STEP 2: START NEW RAT CLIENT WITH PROCESS INJECTION
+Run this command in PowerShell (as Administrator for best results):
+
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+.\rat_client_injection.exe
+```
+
+**Expected output:**
+- "Windows Admin Tool - Educational Use"
+- "Connected!" 
+- "Beacon sent: BEACON|HOSTNAME|USERNAME"
+
+## STEP 3: ACCESS THE UI
+Open browser: http://localhost:3000
+
+Navigate to: **Process Injection** page
+- Look for "Process Injection" in sidebar
+- Or go to: http://localhost:3000/injection
+
+## STEP 4: TEST PROCESS ENUMERATION
+
+### 4.1 Get Process List:
+1. In UI, click "Refresh Process List" button
+2. Should see list of running processes with:
+   - PID numbers
+   - Process names (explorer.exe, chrome.exe, notepad.exe, etc.)
+   - Architecture (x86/x64)
+   - User accounts
+   - Memory usage
+
+### 4.2 Verify Bridge Logs:
+Check bridge terminal for:
+- "Client connected" (new RAT client)
+- "Process list requested"
+- "PROCESS_LIST command sent to client"
+
+### 4.3 Verify RAT Client Logs:
+Check RAT client terminal for:
+- "[PROCESS] Listing processes"
+- Process enumeration output
+
+## STEP 5: TEST DLL INJECTION
+
+### 5.1 Create Test DLL (if needed):
+Compile test_dll.cpp:
+
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+g++ -shared -o test_dll.dll test_dll.cpp -luser32
+```
+
+This creates a simple DLL that shows a message box.
+
+### 5.2 Select Target Process:
+1. Choose a safe target process from the list:
+   - **notepad.exe** (if running)
+   - **calc.exe** (Windows Calculator)
+   - **mspaint.exe** (Paint)
+
+2. Note the PID of the target process
+
+### 5.3 Perform Injection:
+1. Select injection method: "CreateRemoteThread" (default)
+2. Enter DLL path: "C:\Users\Administrator\Desktop\CLI C+ Root\rootserver\test_dll.dll"
+3. Click "Inject" button
+
+### 5.4 Verify Injection:
+**UI should show:**
+- "Injection successful" message
+- Injection appears in "Recent Injections" list
+
+**Bridge logs should show:**
+- "Injecting DLL into PID: XXXX"
+- "INJECTION_RESULT|true|PID|0|Injection successful"
+
+**RAT client logs should show:**
+- "[INJECTION] Attempting to inject..."
+- "[INJECTION] Successfully injected DLL into PID XXXX"
+
+**Target process should:**
+- Show message box: "DLL Injected Successfully!" (if using test_dll.dll)
+
+## STEP 6: TROUBLESHOOTING
+
+### If No Processes Show:
+1. Check RAT client is running and connected
+2. Verify WebSocket connection (bridge logs show "Client connected")
+3. Run RAT as Administrator: `runas /user:Administrator rat_client_injection.exe`
+
+### If Injection Fails:
+1. **Run as Administrator** (required for process injection)
+2. **Check DLL path**: Use absolute path
+3. **Match architectures**: x86 DLL → x86 process, x64 DLL → x64 process
+4. **Avoid protected processes**: Don't inject into system processes
+5. **Test with safe processes first**: notepad.exe, calc.exe, mspaint.exe
+
+### Common Errors:
+- **"Access denied"**: Run RAT as Administrator
+- **"DLL not found"**: Use absolute path to DLL
+- **"Invalid process"**: Process may have terminated
+- **"Failed to allocate memory"**: Target process may be protected
+
+## STEP 7: TEST SPECIFIC FEATURES
+
+### 7.1 Multiple Injection Methods:
+Test different injection methods (if implemented):
+- CreateRemoteThread (standard)
+- QueueUserAPC (alternative)
+- SetWindowsHookEx (GUI processes)
+
+### 7.2 Process Filtering:
+Test process filtering options:
+- Filter by name
+- Filter by architecture (x86/x64)
+- Filter by user
+- Hide system processes
+
+### 7.3 Auto-Refresh:
+Test auto-refresh functionality:
+- Enable auto-refresh
+- Verify process list updates automatically
+- Monitor for new processes appearing
+
+## STEP 8: MONITOR LOGS
+
+### Bridge Server Logs:
+```powershell
+# Watch for these messages:
+- "Client connected"
+- "Process list requested"
+- "Injecting DLL into PID: XXXX"
+- "INJECTION_RESULT|true|PID|0|Injection successful"
+```
+
+### RAT Client Logs:
+```powershell
+# Watch for these messages:
+- "[PROCESS] Listing processes"
+- "[INJECTION] Attempting to inject..."
+- "[INJECTION] Successfully injected DLL into PID XXXX"
+```
+
+### Browser Console (F12):
+1. Open Developer Tools (F12)
+2. Check Console tab for WebSocket messages
+3. Check Network tab for API calls
+
+## QUICK TEST SCRIPT:
+Create a simple test to verify the API:
+
+```javascript
+// test_injection_api.js
+const WebSocket = require('ws');
+const ws = new WebSocket('ws://localhost:8080');
+
+ws.on('open', () => {
+    console.log('Connected to bridge');
+    
+    // Request process list
+    ws.send(JSON.stringify({
+        type: 'get_processes',
+        clientId: 'test-client'
+    }));
+});
+
+ws.on('message', (data) => {
+    console.log('Received:', data.toString());
+});
+
+// Run: node test_injection_api.js
+```
+
+## EXPECTED WORKFLOW:
+1. **UI** → **Bridge** (WebSocket): "get processes"
+2. **Bridge** → **RAT Client** (TCP): "PROCESS_LIST"
+3. **RAT Client** → **Bridge**: "PROCESS_LIST_RESPONSE|JSON"
+4. **Bridge** → **UI**: Process list displayed
+5. **UI** → **Bridge**: "inject_dll" with PID and DLL path
+6. **Bridge** → **RAT Client**: "INJECT_DLL|PID|DLL_PATH|METHOD"
+7. **RAT Client**: Performs injection using injection.cpp
+8. **RAT Client** → **Bridge**: "INJECTION_RESULT|SUCCESS|PID|THREAD_ID|ERROR"
+9. **Bridge** → **UI**: Success/failure message
+
+## READY TO TEST?
+
+### Terminal 1: Bridge Server (already running)
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root"
+node bridge/index.js
+```
+
+### Terminal 2: New RAT Client (run as Administrator)
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root\rootserver"
+.\rat_client_injection.exe
+```
+
+### Terminal 3: Frontend (already running)
+```powershell
+cd "C:\Users\Administrator\Desktop\CLI C+ Root\Client\frontend"
+npm run dev
+```
+
+### Browser:
+Open: http://localhost:3000 → Process Injection → Start testing!
+
+## SUCCESS CRITERIA:
+✅ Process list displays running processes
+✅ Can select a target process
+✅ DLL injection succeeds (shows message box)
+✅ UI shows success message
+✅ Logs show injection workflow
+✅ No crashes or errors
+
+The process injection system is now fully integrated and ready for testing!

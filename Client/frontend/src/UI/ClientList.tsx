@@ -23,6 +23,7 @@ export interface ClientListProps {
   onSelectClient: (client: ClientItem) => void
   selectedClientId?: string
   onDeleteClient?: (client: ClientItem) => void
+  onKillClient?: (client: ClientItem) => void
   className?: string
 }
 
@@ -48,6 +49,7 @@ export default function ClientList({
   onSelectClient,
   selectedClientId,
   onDeleteClient,
+  onKillClient,
   className,
 }: ClientListProps) {
   const [query, setQuery] = useState('')
@@ -170,18 +172,34 @@ export default function ClientList({
                     <TableCell className="text-slate-400">
                       {client.lastSeenFormatted || new Date(client.lastSeen).toLocaleString()}
                     </TableCell>
-                    {onDeleteClient ? (
+                    {onDeleteClient || onKillClient ? (
                       <TableCell>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            onDeleteClient(client)
-                          }}
-                          className="rounded-md border border-red-700/50 bg-red-900/20 px-2 py-1 text-xs font-medium text-red-300 transition hover:bg-red-900/40"
-                        >
-                          Delete
-                        </button>
+                        <div className="flex gap-1">
+                          {onKillClient ? (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                onKillClient(client)
+                              }}
+                              className="rounded-md border border-orange-700/50 bg-orange-900/20 px-2 py-1 text-xs font-medium text-orange-300 transition hover:bg-orange-900/40"
+                            >
+                              Kill
+                            </button>
+                          ) : null}
+                          {onDeleteClient ? (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                onDeleteClient(client)
+                              }}
+                              className="rounded-md border border-red-700/50 bg-red-900/20 px-2 py-1 text-xs font-medium text-red-300 transition hover:bg-red-900/40"
+                            >
+                              Delete
+                            </button>
+                          ) : null}
+                        </div>
                       </TableCell>
                     ) : null}
                   </tr>

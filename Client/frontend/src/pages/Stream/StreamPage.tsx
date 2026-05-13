@@ -35,6 +35,8 @@ export default function StreamPage() {
   const [isStreaming, setIsStreaming] = useState(persisted?.active === true)  // visual state only
   const streamingRef = useRef(persisted?.active === true)                      // track real stream state across renders
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const isMouseDownRef = useRef(false)
+  const lastMouseDownRef = useRef<Record<string, number>>({})
 
   const [clients, setClients] = useState<any[]>([])
   const [restartConfirmOpen, setRestartConfirmOpen] = useState(false)
@@ -150,14 +152,22 @@ export default function StreamPage() {
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    
+
     const x_pct = (x / rect.width) * 100;
     const y_pct = (y / rect.height) * 100;
 
     if (type === 'move') {
+      if (isMouseDownRef.current) return;
       send({ type: 'command', clientId: selectedClientId, command: `mouse_move ${x_pct.toFixed(2)} ${y_pct.toFixed(2)}` });
     } else if (type === 'down' || type === 'up') {
-        send({ type: 'command', clientId: selectedClientId, command: `mouse_click ${btn} ${type} ${x_pct.toFixed(2)} ${y_pct.toFixed(2)}` });
+      if (type === 'down') {
+        const now = Date.now();
+        const lastDown = lastMouseDownRef.current[btn] ?? 0;
+        if (now - lastDown < 150) return; // debounce: drop duplicate down within 150ms
+        lastMouseDownRef.current[btn] = now;
+      }
+      isMouseDownRef.current = type === 'down';
+      send({ type: 'command', clientId: selectedClientId, command: `mouse_click ${btn} ${type} ${x_pct.toFixed(2)} ${y_pct.toFixed(2)}` });
     }
   }
 
@@ -230,11 +240,15 @@ export default function StreamPage() {
         </button>
       </div>
 
-      <div className="w-full bg-black rounded-lg border border-slate-800 flex items-center justify-center overflow-hidden" style={{ minHeight: '600px' }}>
+      {/* 16:9 aspect-ratio wrapper — ensures canvas always fills the exact
+          same proportions as the remote 1920×1080 stream, so click
+          coordinates map 1-to-1 with the remote screen. */}
+      <div className="w-full bg-black rounded-lg border border-slate-800 overflow-hidden"
+           style={{ position: 'relative', paddingTop: '56.25%' }}>
         {!isStreaming && !canvasRef.current?.width ? (
-          <span className="text-slate-600">Waiting for stream...</span>
+          <span className="text-slate-600" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)' }}>Waiting for stream...</span>
         ) : null}
-        <canvas ref={canvasRef} 
+        <canvas ref={canvasRef}
             tabIndex={0}
             onMouseMove={(e) => handleMouseEvent('move', 'left', e)}
             onMouseDown={(e) => handleMouseEvent('down', e.button === 2 ? 'right' : 'left', e)}
@@ -242,8 +256,11 @@ export default function StreamPage() {
             onContextMenu={(e) => e.preventDefault()}
             onKeyDown={(e) => handleKeyEvent('down', e)}
             onKeyUp={(e) => handleKeyEvent('up', e)}
-            className="w-full h-full object-fill cursor-crosshair focus:outline-none"
-            style={{ display: isStreaming || canvasRef.current?.width ? 'block' : 'none' }}
+            className="cursor-crosshair focus:outline-none"
+            style={{
+              display: isStreaming || canvasRef.current?.width ? 'block' : 'none',
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%'
+            }}
           />
       </div>
 

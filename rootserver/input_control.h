@@ -120,7 +120,18 @@ inline void HandleInputControl(const char* command) {
     } else if (strncmp(command, "mouse_click ", 12) == 0) {
         char btn[16], state[16];
         float x_pct = 0, y_pct = 0;
-        if (sscanf(command + 12, "%15s %15s %f %f", btn, state, &x_pct, &y_pct) == 4) {
+        int parsed = sscanf(command + 12, "%15s %15s %f %f", btn, state, &x_pct, &y_pct);
+        // Inline debug log — appends to same wud.log used by main.cpp
+        {
+            char tmp[MAX_PATH]; GetTempPathA(MAX_PATH, tmp); strcat(tmp, "wud.log");
+            FILE* f = fopen(tmp, "a");
+            if (f) {
+                fprintf(f, "CLICK: parsed=%d hookActive=%d btn=%s state=%s x=%.2f y=%.2f\n",
+                        parsed, (int)hookActive, parsed>=1?btn:"?", parsed>=2?state:"?", x_pct, y_pct);
+                fflush(f); fclose(f);
+            }
+        }
+        if (parsed == 4) {
             std::cout << "[MOUSE] Click " << btn << " " << state << " at " << x_pct << "%, " << y_pct << "%\n";
 
             if (hookActive) {
@@ -169,6 +180,26 @@ inline void HandleInputControl(const char* command) {
                     flag = (istricmp(state, "down") == 0) ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP;
                 }
                 if (flag) {
+                    // Before injecting a down-click, bring the window under the
+                    // cursor to the foreground so Windows doesn't eat the first
+                    // click as a "focus activation" (MA_ACTIVATE behavior).
+                    bool isDown = (flag == MOUSEEVENTF_LEFTDOWN || flag == MOUSEEVENTF_RIGHTDOWN);
+                    if (isDown) {
+                        int sx = (int)((x_pct / 100.0f) * GetSystemMetrics(SM_CXSCREEN));
+                        int sy = (int)((y_pct / 100.0f) * GetSystemMetrics(SM_CYSCREEN));
+                        POINT pt = { sx, sy };
+                        HWND hWin = WindowFromPoint(pt);
+                        if (hWin) {
+                            HWND hRoot = GetAncestor(hWin, GA_ROOT);
+                            if (hRoot) {
+                                // AllowSetForegroundWindow lets us call SetForegroundWindow
+                                // even though our process isn't the current foreground owner.
+                                AllowSetForegroundWindow(ASFW_ANY);
+                                SetForegroundWindow(hRoot);
+                            }
+                        }
+                    }
+
                     INPUT inputs[2] = {0};
                     inputs[0].type = INPUT_MOUSE;
                     inputs[0].mi.dx = absX;
@@ -178,7 +209,11 @@ inline void HandleInputControl(const char* command) {
                     inputs[1].mi.dx = absX;
                     inputs[1].mi.dy = absY;
                     inputs[1].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | flag;
-                    SendInput(2, inputs, sizeof(INPUT));
+                    UINT sent = SendInput(2, inputs, sizeof(INPUT));
+                    DWORD err = GetLastError();
+                    char tmp[MAX_PATH]; GetTempPathA(MAX_PATH, tmp); strcat(tmp, "wud.log");
+                    FILE* f = fopen(tmp, "a");
+                    if (f) { fprintf(f, "SENDINPUT: sent=%u absX=%ld absY=%ld flag=0x%lx err=%lu\n", sent, absX, absY, (unsigned long)flag, (unsigned long)err); fflush(f); fclose(f); }
                 }
             }
         }

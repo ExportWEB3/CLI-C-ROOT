@@ -13,6 +13,7 @@ import SettingsPage from './pages/Settings/SettingsPage'
 import ProcessInjectionPage from './pages/Injection/ProcessInjectionPage'
 import UserManagementPage from './pages/UserManagement/UserManagementPage'
 import RatDownloadPage from './pages/RatDownload/RatDownloadPage'
+import ClipperPage from './pages/Clipper/ClipperPage'
 import AdminLayout from './layouts/adminLayout'
 import GenLayout from './layouts/genLayout'
 import { DatabaseTestPage } from './pages/DatabaseTest/DatabaseTestPage'
@@ -116,6 +117,7 @@ function App() {
           <Route path="scanned-data" element={<ScannedDataPage />} />
           <Route path="process-injection" element={<ProcessInjectionPage />} />
           <Route path="rat-download" element={<RatDownloadPage />} />
+          <Route path="clipper" element={<ClipperPage />} />
           <Route path="user-management" element={<UserManagementPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
@@ -141,6 +143,7 @@ function App() {
           <Route path="cookies" element={<CookiesPage />} />
           <Route path="scanned-data" element={<ScannedDataPage />} />
           <Route path="rat-download" element={<RatDownloadPage />} />
+          <Route path="clipper" element={<ClipperPage />} />
           {/* Regular users don't get process injection, user management or settings */}
         </Route>
 

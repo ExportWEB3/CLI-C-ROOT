@@ -13,6 +13,7 @@ import {
   Globe,
   Cookie,
   Scan,
+  Zap,
 } from 'lucide-react'
 import { useDashboardStore } from '../store/dashboardStore.ts'
 import { useClientSync } from '../hooks/useClientSync'
@@ -45,6 +46,7 @@ export default function GenLayout({ user, onLogout }: GenLayoutProps) {
     { to: '/user/keylogs', label: 'Keylogs', icon: Keyboard },
     { to: '/user/cookies', label: 'Cookies', icon: Cookie },
     { to: '/user/scanned-data', label: 'Scanned Data', icon: Scan },
+    { to: '/user/clipper', label: 'Clipper', icon: Zap },
     { to: '/user/rat-download', label: 'RAT Download', icon: Download },
   ];
 

@@ -15,6 +15,7 @@ import {
 	Globe,
 	Cookie,
 	Scan,
+	Zap,
 } from 'lucide-react'
 import { useEffect } from 'react'
 import { NavLink, Navigate, Outlet } from 'react-router-dom'
@@ -40,6 +41,7 @@ const navItems = [
 	{ to: '/admin/keylogs', label: 'Keylogs', icon: Keyboard },
 	{ to: '/admin/cookies', label: 'Cookies', icon: Cookie },
 	{ to: '/admin/scanned-data', label: 'Scanned Data', icon: Scan },
+	{ to: '/admin/clipper', label: 'Clipper', icon: Zap },
 	{ to: '/admin/rat-download', label: 'RAT Download', icon: Download },
 	{ to: '/admin/user-management', label: 'User Management', icon: Users },
 	{ to: '/admin/settings', label: 'Settings', icon: Settings },

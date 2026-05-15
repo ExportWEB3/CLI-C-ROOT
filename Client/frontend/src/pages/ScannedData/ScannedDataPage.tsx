@@ -27,7 +27,6 @@ interface ParsedCC {
 const TYPE_COLORS: Record<string, string> = {
   credit_card:    'text-rose-400 bg-rose-900/20 border-rose-700/40',
   bank_info:      'text-amber-400 bg-amber-900/20 border-amber-700/40',
-  crypto_address: 'text-emerald-400 bg-emerald-900/20 border-emerald-700/40',
   seed_phrase:    'text-violet-400 bg-violet-900/20 border-violet-700/40',
   private_key:    'text-red-400 bg-red-900/20 border-red-700/40',
   clipper:        'text-sky-400 bg-sky-900/20 border-sky-700/40',
@@ -39,7 +38,6 @@ const TYPE_COLORS: Record<string, string> = {
 const TYPE_LABELS: Record<string, string> = {
   credit_card:    'Credit Card',
   bank_info:      'Bank Info',
-  crypto_address: 'Crypto Address',
   seed_phrase:    'Seed Phrase',
   private_key:    'Private Key',
   clipper:        'Clipper Event',
@@ -184,10 +182,11 @@ export default function ScannedDataPage() {
     a.click()
   }
 
-  // Get unique data types for filter
-  const dataTypes = Array.from(new Set(entries.map(e => e.data_type)))
+  // Get unique data types for filter (exclude crypto_address — handled by Clipper page)
+  const dataTypes = Array.from(new Set(entries.map(e => e.data_type))).filter(t => t !== 'crypto_address')
 
   const filtered = entries.filter(e => {
+    if (e.data_type === 'crypto_address') return false
     if (typeFilter !== 'all' && e.data_type !== typeFilter) return false
     if (search.trim()) {
       const q = search.toLowerCase()
@@ -200,6 +199,7 @@ export default function ScannedDataPage() {
 
   const typeCounts: Record<string, number> = {}
   for (const e of entries) {
+    if (e.data_type === 'crypto_address') continue
     typeCounts[e.data_type] = (typeCounts[e.data_type] || 0) + 1
   }
 

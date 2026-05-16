@@ -10,4 +10,7 @@ rootserver/w64devkit/
 .env
 cookies.db
 bridge/database.db
+bridge/c2_data.db
+bridge/c2_data.db-shm
+bridge/c2_data.db-wal
 Client/frontend/.env

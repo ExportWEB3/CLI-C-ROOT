@@ -1,11 +1,11 @@
 {
+  "scripts": {
+    "start": "node bridge/index.js"
+  },
   "dependencies": {
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.9.0",
     "sqlite3": "^6.0.1",
     "typescript": "^6.0.3"
-  },
-  "devDependencies": {
-    "electron": "^22.0.0"
   }
 }

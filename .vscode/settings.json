@@ -1,0 +1,8 @@
+{
+  "npm.exclude": [
+    "**/cookie-browser/**",
+    "**/electron22/**",
+    "**/node_modules/**"
+  ],
+  "npm.autoDetect": "off"
+}

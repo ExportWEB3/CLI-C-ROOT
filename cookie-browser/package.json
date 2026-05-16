@@ -4,7 +4,7 @@
   "description": "Electron app that opens browser windows with stolen cookies injected",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "launch": "electron ."
   },
   "devDependencies": {
     "electron": "^28.0.0"
